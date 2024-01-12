@@ -750,6 +750,8 @@ coverage_remove_note_file (void)
     }
 }
 
+static const char *profile_data_section = ".data";
+
 /* Build a coverage variable of TYPE for function FN_DECL.  If COUNTER
    >= 0 it is a counter array, otherwise it is the function structure.  */
 
@@ -777,6 +779,21 @@ build_var (tree fn_decl, tree type, int counter)
   TREE_ADDRESSABLE (var) = 1;
   DECL_NONALIASED (var) = 1;
   SET_DECL_ALIGN (var, TYPE_ALIGN (type));
+
+  if (profile_data_section)
+    {
+      if (flag_data_sections)
+	{
+	  size_t section_name_len = strlen (profile_data_section) + 1
+				    + len + fn_name_len + 1;
+	  char *section_name = XALLOCAVEC (char, section_name_len);
+	  sprintf (section_name, "%s.%s", profile_data_section, buf);
+	  get_section (section_name, SECTION_WRITE, NULL_TREE);
+	  set_decl_section_name (var, section_name);
+	}
+      else
+	set_decl_section_name (var, profile_data_section);
+    }
 
   return var;
 }

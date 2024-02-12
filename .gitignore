@@ -1,3 +1,4 @@
+/newlib
 *.diff
 *.patch
 *.orig

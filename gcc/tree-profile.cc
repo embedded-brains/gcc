@@ -1048,6 +1048,57 @@ resolve_counters (vec<counters> &cands)
 
 }
 
+/* At edge E, update the decision counter referenced by REF with the
+   COUNTER.  Generate two separate 32-bit atomic bitwise-or operations
+   specified by ATOMIC_IOR_32 in the RELAXED memory order.  */
+static void
+split_update_decision_counter (edge e, tree ref, tree counter, tree
+			       atomic_ior_32, tree relaxed)
+{
+    gimple_stmt_iterator gsi = gsi_last (PENDING_STMT (e));
+    ref = unshare_expr (ref);
+
+    /* Get the low and high address of the referenced counter */
+    tree addr_low = build_addr (ref);
+    tree addr_high = make_temp_ssa_name (TREE_TYPE (addr_low), NULL,
+					 "PROF_decision");
+    tree four = build_int_cst (size_type_node, 4);
+    gassign *assign1 = gimple_build_assign (addr_high, POINTER_PLUS_EXPR,
+					    addr_low, four);
+    gsi_insert_after (&gsi, assign1, GSI_NEW_STMT);
+    if (WORDS_BIG_ENDIAN)
+	std::swap (addr_low, addr_high);
+
+    /* Get the low 32-bit of the counter */
+    tree counter_low_32 = make_temp_ssa_name (uint32_type_node, NULL,
+					      "PROF_decision");
+    gassign *assign2 = gimple_build_assign (counter_low_32, NOP_EXPR, counter);
+    gsi_insert_after (&gsi, assign2, GSI_NEW_STMT);
+
+    /* Get the high 32-bit of the counter */
+    tree shift_32 = build_int_cst (integer_type_node, 32);
+    tree counter_high_64 = make_temp_ssa_name (gcov_type_node, NULL,
+					       "PROF_decision");
+    gassign *assign3 = gimple_build_assign (counter_high_64, LSHIFT_EXPR,
+					    counter, shift_32);
+    gsi_insert_after (&gsi, assign3, GSI_NEW_STMT);
+    tree counter_high_32 = make_temp_ssa_name (uint32_type_node, NULL,
+					       "PROF_decision");
+    gassign *assign4 = gimple_build_assign (counter_high_32, NOP_EXPR,
+					    counter_high_64);
+    gsi_insert_after (&gsi, assign4, GSI_NEW_STMT);
+
+    /* Atomically bitwise-or the low 32-bit counter parts */
+    gcall *call1 = gimple_build_call (atomic_ior_32, 3, addr_low,
+				      counter_low_32, relaxed);
+    gsi_insert_after (&gsi, call1, GSI_NEW_STMT);
+
+    /* Atomically bitwise-or the high 32-bit counter parts */
+    gcall *call2 = gimple_build_call (atomic_ior_32, 3, addr_high,
+				      counter_high_32, relaxed);
+    gsi_insert_after (&gsi, call2, GSI_NEW_STMT);
+}
+
 /* Add instrumentation to a decision subgraph.  EXPR should be the
    (topologically sorted) block of nodes returned by cov_blocks, MAPS the
    bitmaps returned by cov_maps, and MASKS the block of bitsets returned by
@@ -1150,7 +1201,13 @@ instrument_decisions (array_slice<basic_block> expr, size_t condno,
   gcc_assert (xi == bitmap_count_bits (core));
 
   const tree relaxed = build_int_cst (integer_type_node, MEMMODEL_RELAXED);
-  const bool atomic = flag_profile_update == PROFILE_UPDATE_ATOMIC;
+  const bool use_atomic_builtin
+    = counter_update == COUNTER_UPDATE_ATOMIC_BUILTIN;
+  const bool use_atomic_split
+    = counter_update == COUNTER_UPDATE_ATOMIC_SPLIT
+      || counter_update == COUNTER_UPDATE_ATOMIC_PARTIAL;
+  const tree atomic_ior_32
+    = builtin_decl_explicit (BUILT_IN_ATOMIC_FETCH_OR_4);
   const tree atomic_ior
     = builtin_decl_explicit (TYPE_PRECISION (gcov_type_node) > 32
 			     ? BUILT_IN_ATOMIC_FETCH_OR_8
@@ -1194,13 +1251,18 @@ instrument_decisions (array_slice<basic_block> expr, size_t condno,
 		continue;
 	      tree ref = tree_coverage_counter_ref (GCOV_COUNTER_CONDS,
 						    2 * condno + k);
-	      if (atomic)
+	      if (use_atomic_builtin)
 		{
 		  ref = unshare_expr (ref);
 		  gcall *flush = gimple_build_call (atomic_ior, 3,
 						    build_addr (ref),
 						    next[k], relaxed);
 		  gsi_insert_on_edge (e, flush);
+		}
+	      else if (use_atomic_split)
+		{
+		    split_update_decision_counter (e, ref, next[k],
+						   atomic_ior_32, relaxed);
 		}
 	      else
 		{

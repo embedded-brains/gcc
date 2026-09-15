@@ -242,6 +242,28 @@ moxie_option_override (void)
 /* Compute the size of the local area and the size to be adjusted by the
  * prologue and epilogue.  */
 
+/* Return true if the prologue must save register REGNO.  A function which
+   calls __builtin_eh_return takes the exception pointer and the selector
+   out of the frame, so the registers which carry them need a slot there.  */
+
+static bool
+moxie_save_reg_p (int regno)
+{
+  unsigned int i;
+
+  if (df_regs_ever_live_p (regno) && !call_used_or_fixed_reg_p (regno))
+    return true;
+
+  if (!crtl->calls_eh_return)
+    return false;
+
+  for (i = 0; EH_RETURN_DATA_REGNO (i) != INVALID_REGNUM; ++i)
+    if (regno == (int) EH_RETURN_DATA_REGNO (i))
+      return true;
+
+  return false;
+}
+
 static void
 moxie_compute_frame (void)
 {
@@ -264,7 +286,7 @@ moxie_compute_frame (void)
 
   /* Save callee-saved registers.  */
   for (regno = 0; regno < FIRST_PSEUDO_REGISTER; regno++)
-    if (df_regs_ever_live_p (regno) && (! call_used_or_fixed_reg_p (regno)))
+    if (moxie_save_reg_p (regno))
       cfun->machine->callee_saved_reg_size += 4;
 
   cfun->machine->size_for_adjusting_sp =
@@ -288,8 +310,7 @@ moxie_expand_prologue (void)
   /* Save callee-saved registers.  */
   for (regno = 0; regno < FIRST_PSEUDO_REGISTER; regno++)
     {
-      if (df_regs_ever_live_p (regno)
-	  && !call_used_or_fixed_reg_p (regno))
+      if (moxie_save_reg_p (regno))
 	{
 	  insn = emit_insn (gen_movsi_push (gen_rtx_REG (Pmode, regno)));
 	  RTX_FRAME_RELATED_P (insn) = 1;
@@ -350,13 +371,16 @@ moxie_expand_epilogue (void)
 	  emit_insn (gen_addsi3 (reg, reg, hard_frame_pointer_rtx));
 	}
       for (regno = FIRST_PSEUDO_REGISTER; regno-- > 0; )
-	if (!call_used_or_fixed_reg_p (regno)
-	    && df_regs_ever_live_p (regno))
+	if (moxie_save_reg_p (regno))
 	  {
 	    rtx preg = gen_rtx_REG (Pmode, regno);
 	    emit_insn (gen_movsi_pop (reg, preg));
 	  }
     }
+
+  if (crtl->calls_eh_return)
+    emit_insn (gen_addsi3 (hard_frame_pointer_rtx, hard_frame_pointer_rtx,
+			   EH_RETURN_STACKADJ_RTX));
 
   emit_jump_insn (gen_returner ());
 }

@@ -243,7 +243,8 @@ enum reg_class
 /* Define this macro as a C expression that is nonzero for registers that are
    used by the epilogue or the return pattern.  The stack and frame
    pointer registers are already assumed to be used as needed.  */
-#define EPILOGUE_USES(R) (R == MOXIE_R5)
+#define EPILOGUE_USES(R)						\
+  ((R) == MOXIE_R5 || (crtl->calls_eh_return && (R) == MOXIE_R4))
 
 /* A C expression whose value is RTL representing the location of the
    incoming return address at the beginning of any function, before
@@ -252,13 +253,37 @@ enum reg_class
   gen_frame_mem (Pmode,							\
 		 plus_constant (Pmode, stack_pointer_rtx, UNITS_PER_WORD))
 
+/* The jsr instruction pushes a slot for the static chain, the return
+   address and the frame pointer of the caller.  The stack pointer at the
+   entry of a function is therefore 12 bytes below the canonical frame
+   address.  */
+#define INCOMING_FRAME_SP_OFFSET 12
+
+/* A C expression whose value is RTL representing the address of the frame
+   of the current function.  The jsr instruction sets the frame pointer to
+   the address of the saved frame pointer of the caller, and the return
+   address is the word above it.  The generic default names the soft frame
+   pointer, which sits below the saved registers of the frame.  */
+#define INITIAL_FRAME_ADDRESS_RTX hard_frame_pointer_rtx
+
 /* Describe how we implement __builtin_eh_return.  */
 #define EH_RETURN_DATA_REGNO(N)	((N) < 4 ? (N+2) : INVALID_REGNUM)
 
-/* Store the return handler into the call frame.  */
+/* The unwinder passes the difference of the canonical frame address of the
+   handler frame and of this frame.  That difference is also the difference
+   of the two frame pointers, so the epilogue adds this register to the
+   frame pointer.  The ret instruction then takes the frame pointer and the
+   program counter of the handler frame out of the new frame.  */
+#define EH_RETURN_STACKADJ_RTX	gen_rtx_REG (Pmode, MOXIE_R4)
+
+/* Store the return handler into the frame which the epilogue returns to.  */
 #define EH_RETURN_HANDLER_RTX						\
   gen_frame_mem (Pmode,							\
-		 plus_constant (Pmode, frame_pointer_rtx, UNITS_PER_WORD))
+		 plus_constant (Pmode,					\
+				gen_rtx_PLUS (Pmode,			\
+					      hard_frame_pointer_rtx,	\
+					      EH_RETURN_STACKADJ_RTX),	\
+				UNITS_PER_WORD))
 
 /* Storage Layout */
 

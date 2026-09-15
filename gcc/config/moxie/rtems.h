@@ -29,6 +29,7 @@
     {						\
       builtin_define_std ("moxie");		\
       builtin_define ("__rtems__");		\
+      builtin_define ("__USE_INIT_FINI__");	\
       builtin_assert ("system=rtems");		\
     }						\
   while (0)

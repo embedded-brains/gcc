@@ -32,6 +32,7 @@
 
     .section .init, "ax"
     .global __init
+    .global _init
 
     .weak _stack
     .set  _stack, 0xffffffff
@@ -40,6 +41,7 @@
 
     .align 2
 __init: 
+_init:
     addik   r1, r1, -8
     sw      r15, r0, r1
     la      r11, r0, _stack
@@ -49,7 +51,9 @@ __init:
 
     .section .fini, "ax"
     .global __fini
+    .global _fini
     .align 2
 __fini: 
+_fini:
     addik   r1, r1, -8
     sw      r15, r0, r1

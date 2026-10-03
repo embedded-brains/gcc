@@ -881,6 +881,9 @@ microblaze_classify_address (struct microblaze_address_info *info, rtx x,
 				  get_base_reg (XVECEXP (XEXP (x,0), 0, 0)));
 		return microblaze_classify_unspec (info, XEXP (x, 0));
 	     }
+	     /* A thread-local symbol has no absolute address.  */
+	     if (microblaze_tls_referenced_p (x))
+	       return false;
 	     return !(flag_pic && pic_address_needs_scratch (x));
 	  }
 

@@ -495,12 +495,20 @@ or1k_dynamic_chain_addr (rtx frame)
 }
 
 /* Worker for RETURN_ADDR_RTX.
-   Returns the RTX representing the address of where the link register may be
-   stored on the stack.  */
+   Returns the RTX representing the return address of the frame COUNT.  For
+   the current frame, this is the value of the link register on entry.  For a
+   previous frame, it is the address of where the link register may be stored
+   on the stack.  */
 
 rtx
-or1k_return_addr (int, rtx frame)
+or1k_return_addr (int count, rtx frame)
 {
+  /* The prologue stores the link register into the frame.  A load from that
+     slot has no dependency on the store, so the scheduler may place it
+     before the store.  */
+  if (count == 0)
+    return get_hard_reg_initial_val (Pmode, LR_REGNUM);
+
   return gen_frame_mem (Pmode, plus_constant (Pmode, frame, -UNITS_PER_WORD));
 }
 

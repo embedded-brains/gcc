@@ -33,6 +33,19 @@
 
 struct htab;
 
+/* Without plugin support, libgomp has no offload devices.  */
+#ifdef PLUGIN_SUPPORT
+# define GOMP_HAVE_OFFLOAD_DEVICES 1
+#else
+# define GOMP_HAVE_OFFLOAD_DEVICES 0
+#endif
+
+/* Return true, if DEVICEP is an offload device and not NULL for the host.
+   Without offload devices, the result is the constant false, so that the
+   compiler removes the device paths.  DEVICEP is evaluated in any case.  */
+#define GOMP_IS_OFFLOAD_DEVICE(devicep) \
+  ((devicep) != NULL && GOMP_HAVE_OFFLOAD_DEVICES)
+
 /* Defined in target.c.  */
 
 /* Array of descriptors for all available devices.  */

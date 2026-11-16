@@ -67,7 +67,8 @@ int num_devices_openmp;
 attribute_hidden void
 gomp_init_targets_once (void)
 {
-  (void) pthread_once (&gomp_is_initialized, gomp_target_init);
+  if (GOMP_HAVE_OFFLOAD_DEVICES)
+    (void) pthread_once (&gomp_is_initialized, gomp_target_init);
 }
 
 attribute_hidden int
@@ -113,7 +114,7 @@ resolve_device (int device_id, bool remapped)
 
       return NULL;
     }
-  else if (device_id >= num_devices)
+  else if (!GOMP_HAVE_OFFLOAD_DEVICES || device_id >= num_devices)
     {
       if (gomp_target_offload_var == GOMP_TARGET_OFFLOAD_MANDATORY
 	  && device_id != num_devices)
@@ -148,7 +149,7 @@ gomp_target_fallback (void (*fn) (void *), void **hostaddrs,
   struct gomp_thread old_thr, *thr = gomp_thread ();
 
   if (gomp_target_offload_var == GOMP_TARGET_OFFLOAD_MANDATORY
-      && devicep != NULL)
+      && GOMP_IS_OFFLOAD_DEVICE (devicep))
     gomp_fatal ("OMP_TARGET_OFFLOAD is set to MANDATORY, but device cannot "
 		"be used for offloading");
 
@@ -187,7 +188,7 @@ static inline unsigned int
 clear_unsupported_flags (struct gomp_device_descr *devicep, unsigned int flags)
 {
   /* If we cannot run asynchronously, simply ignore nowait.  */
-  if (devicep != NULL && devicep->async_run_func == NULL)
+  if (GOMP_IS_OFFLOAD_DEVICE (devicep) && devicep->async_run_func == NULL)
     flags &= ~GOMP_TARGET_FLAG_NOWAIT;
 
   return flags;
@@ -443,7 +444,8 @@ GOMP_target_ext (int device, void (*fn) (void *), size_t mapnum,
     }
 
   void *fn_addr;
-  if (devicep == NULL || !(fn_addr = gomp_device_fn_addr (devicep, fn)))
+  if (!GOMP_IS_OFFLOAD_DEVICE (devicep)
+      || !(fn_addr = gomp_device_fn_addr (devicep, fn)))
     {
       if (!fpc_done)
 	{
@@ -479,11 +481,11 @@ gomp_target_data_fallback (struct gomp_device_descr *devicep)
   struct gomp_task_icv *icv = gomp_icv (false);
 
   if (gomp_target_offload_var == GOMP_TARGET_OFFLOAD_MANDATORY
-      && devicep != NULL)
+      && GOMP_IS_OFFLOAD_DEVICE (devicep))
     gomp_fatal ("OMP_TARGET_OFFLOAD is set to MANDATORY, but device cannot "
 		"be used for offloading");
 
-  if (icv->target_data)
+  if (GOMP_HAVE_OFFLOAD_DEVICES && icv->target_data)
     gomp_target_data_push_empty (icv);
 }
 
@@ -493,7 +495,7 @@ GOMP_target_data_ext (int device, size_t mapnum, void **hostaddrs,
 {
   struct gomp_device_descr *devicep = resolve_device (device, true);
 
-  if (devicep == NULL || !gomp_device_maps_data (devicep))
+  if (!GOMP_IS_OFFLOAD_DEVICE (devicep) || !gomp_device_maps_data (devicep))
     return gomp_target_data_fallback (devicep);
 
   gomp_target_data_device (devicep, mapnum, hostaddrs, sizes, kinds, true);
@@ -503,7 +505,7 @@ void
 GOMP_target_end_data (void)
 {
   struct gomp_task_icv *icv = gomp_icv (false);
-  if (icv->target_data)
+  if (GOMP_HAVE_OFFLOAD_DEVICES && icv->target_data)
     gomp_target_data_pop (icv);
 }
 
@@ -560,7 +562,7 @@ GOMP_target_update_ext (int device, size_t mapnum, void **hostaddrs,
 	}
     }
 
-  if (devicep == NULL || !gomp_device_maps_data (devicep))
+  if (!GOMP_IS_OFFLOAD_DEVICE (devicep) || !gomp_device_maps_data (devicep))
     return;
 
   gomp_target_update_device (devicep, mapnum, hostaddrs, sizes, kinds);
@@ -620,7 +622,7 @@ GOMP_target_enter_exit_data (int device, size_t mapnum, void **hostaddrs,
 	}
     }
 
-  if (devicep == NULL || !gomp_device_maps_data (devicep))
+  if (!GOMP_IS_OFFLOAD_DEVICE (devicep) || !gomp_device_maps_data (devicep))
     return;
 
   gomp_enter_exit_data (devicep, mapnum, hostaddrs, sizes, kinds, flags);
@@ -635,7 +637,7 @@ gomp_target_task_fn (void *data)
   if (ttask->fn != NULL)
     {
       void *fn_addr;
-      if (devicep == NULL
+      if (!GOMP_IS_OFFLOAD_DEVICE (devicep)
 	  || !(fn_addr = gomp_device_fn_addr (devicep, ttask->fn)))
 	{
 	  ttask->state = GOMP_TARGET_TASK_FALLBACK;
@@ -646,7 +648,8 @@ gomp_target_task_fn (void *data)
 
       return gomp_target_task_run (devicep, ttask, fn_addr);
     }
-  else if (devicep == NULL || !gomp_device_maps_data (devicep))
+  else if (!GOMP_IS_OFFLOAD_DEVICE (devicep)
+	   || !gomp_device_maps_data (devicep))
     return false;
 
   gomp_target_task_data (devicep, ttask);
@@ -697,7 +700,7 @@ omp_target_alloc (size_t size, int device_num)
     return malloc (size);
 
   struct gomp_device_descr *devicep = resolve_device (device_num, false);
-  if (devicep == NULL)
+  if (!GOMP_IS_OFFLOAD_DEVICE (devicep))
     return NULL;
 
   return gomp_device_alloc (devicep, size);
@@ -717,7 +720,7 @@ omp_target_free (void *device_ptr, int device_num)
     }
 
   struct gomp_device_descr *devicep = resolve_device (device_num, false);
-  if (devicep == NULL || device_ptr == NULL)
+  if (!GOMP_IS_OFFLOAD_DEVICE (devicep) || device_ptr == NULL)
     return;
 
   gomp_device_free (devicep, device_ptr);
@@ -750,7 +753,7 @@ omp_target_is_present (const void *ptr, int device_num)
     return 1;
 
   struct gomp_device_descr *devicep = resolve_device (device_num, false);
-  if (devicep == NULL)
+  if (!GOMP_IS_OFFLOAD_DEVICE (devicep))
     return 0;
 
   return gomp_device_is_present (devicep, ptr);
@@ -771,7 +774,7 @@ omp_target_memcpy_check (int dst_device_num, int src_device_num,
       && dst_device_num != omp_initial_device)
     {
       *dst_devicep = resolve_device (dst_device_num, false);
-      if (*dst_devicep == NULL)
+      if (!GOMP_IS_OFFLOAD_DEVICE (*dst_devicep))
 	return EINVAL;
 
       if (!gomp_device_maps_data (*dst_devicep))
@@ -782,7 +785,7 @@ omp_target_memcpy_check (int dst_device_num, int src_device_num,
       && src_device_num != omp_initial_device)
     {
       *src_devicep = resolve_device (src_device_num, false);
-      if (*src_devicep == NULL)
+      if (!GOMP_IS_OFFLOAD_DEVICE (*src_devicep))
 	return EINVAL;
 
       if (!gomp_device_maps_data (*src_devicep))
@@ -798,7 +801,8 @@ omp_target_memcpy_copy (void *dst, const void *src, size_t length,
 			struct gomp_device_descr *dst_devicep,
 			struct gomp_device_descr *src_devicep)
 {
-  if (src_devicep == NULL && dst_devicep == NULL)
+  if (!GOMP_IS_OFFLOAD_DEVICE (src_devicep)
+      && !GOMP_IS_OFFLOAD_DEVICE (dst_devicep))
     {
       memcpy ((char *) dst + dst_offset, (char *) src + src_offset, length);
       return 0;
@@ -908,7 +912,8 @@ omp_target_memcpy_rect_worker (void *dst, const void *src, size_t element_size,
 	  || __builtin_mul_overflow (element_size, dst_offsets[0], &dst_off)
 	  || __builtin_mul_overflow (element_size, src_offsets[0], &src_off))
 	return EINVAL;
-      if (dst_devicep == NULL && src_devicep == NULL)
+      if (!GOMP_IS_OFFLOAD_DEVICE (dst_devicep)
+	  && !GOMP_IS_OFFLOAD_DEVICE (src_devicep))
 	{
 	  memcpy ((char *) dst + dst_off, (const char *) src + src_off,
 		  length);
@@ -919,7 +924,8 @@ omp_target_memcpy_rect_worker (void *dst, const void *src, size_t element_size,
     }
 
   /* host->device, device->host and intra device.  */
-  if (dst_devicep != NULL || src_devicep != NULL)
+  if (GOMP_IS_OFFLOAD_DEVICE (dst_devicep)
+      || GOMP_IS_OFFLOAD_DEVICE (src_devicep))
     {
       ret = gomp_device_memcpy_rect (dst, src, element_size, num_dims, volume,
 				     dst_offsets, src_offsets, dst_dimensions,
@@ -981,16 +987,16 @@ omp_target_memcpy_rect_copy (void *dst, const void *src,
 {
   size_t tmp_size = 0;
   void *tmp = NULL;
-  bool with_device = dst_devicep != NULL || src_devicep != NULL;
-
-  if (with_device)
+  if (GOMP_IS_OFFLOAD_DEVICE (dst_devicep)
+      || GOMP_IS_OFFLOAD_DEVICE (src_devicep))
     gomp_device_lock_pair (dst_devicep, src_devicep);
   int ret = omp_target_memcpy_rect_worker (dst, src, element_size, num_dims,
 					   volume, dst_offsets, src_offsets,
 					   dst_dimensions, src_dimensions,
 					   dst_devicep, src_devicep,
 					   &tmp_size, &tmp);
-  if (with_device)
+  if (GOMP_IS_OFFLOAD_DEVICE (dst_devicep)
+      || GOMP_IS_OFFLOAD_DEVICE (src_devicep))
     gomp_device_unlock_pair (dst_devicep, src_devicep);
   if (tmp)
     free (tmp);
@@ -1109,7 +1115,7 @@ omp_target_memset_int (void *ptr, int val, size_t count,
 {
   if (__builtin_expect (count == 0, 0))
     return;
-  if (devicep == NULL)
+  if (!GOMP_IS_OFFLOAD_DEVICE (devicep))
     {
       memset (ptr, val, count);
       return;
@@ -1127,7 +1133,7 @@ omp_target_memset (void *ptr, int val, size_t count, int device_num)
   struct gomp_device_descr *devicep;
   if (device_num == omp_initial_device
       || device_num == gomp_get_num_devices ()
-      || (devicep = resolve_device (device_num, false)) == NULL
+      || !GOMP_IS_OFFLOAD_DEVICE (devicep = resolve_device (device_num, false))
       || !gomp_device_maps_data (devicep))
     devicep = NULL;
 
@@ -1164,7 +1170,7 @@ omp_target_memset_async (void *ptr, int val, size_t count, int device_num,
 
   if (device_num == omp_initial_device
       || device_num == gomp_get_num_devices ()
-      || (devicep = resolve_device (device_num, false)) == NULL
+      || !GOMP_IS_OFFLOAD_DEVICE (devicep = resolve_device (device_num, false))
       || !gomp_device_maps_data (devicep))
     devicep = NULL;
 
@@ -1197,7 +1203,7 @@ omp_target_associate_ptr (const void *host_ptr, const void *device_ptr,
     return EINVAL;
 
   struct gomp_device_descr *devicep = resolve_device (device_num, false);
-  if (devicep == NULL)
+  if (!GOMP_IS_OFFLOAD_DEVICE (devicep))
     return EINVAL;
 
   return gomp_device_associate_ptr (devicep, host_ptr, device_ptr, size,
@@ -1208,7 +1214,7 @@ int
 omp_target_disassociate_ptr (const void *ptr, int device_num)
 {
   struct gomp_device_descr *devicep = resolve_device (device_num, false);
-  if (devicep == NULL)
+  if (!GOMP_IS_OFFLOAD_DEVICE (devicep))
     return EINVAL;
 
   return gomp_device_disassociate_ptr (devicep, ptr);
@@ -1226,7 +1232,7 @@ omp_get_mapped_ptr (const void *ptr, int device_num)
     return (void *) ptr;
 
   struct gomp_device_descr *devicep = resolve_device (device_num, false);
-  if (devicep == NULL)
+  if (!GOMP_IS_OFFLOAD_DEVICE (devicep))
     return NULL;
 
   return gomp_device_get_mapped_ptr (devicep, ptr);
@@ -1246,7 +1252,7 @@ omp_target_is_accessible (const void *ptr, size_t size, int device_num)
     return true;
 
   struct gomp_device_descr *devicep = resolve_device (device_num, false);
-  if (devicep == NULL)
+  if (!GOMP_IS_OFFLOAD_DEVICE (devicep))
     return false;
 
   return gomp_device_is_accessible (devicep, ptr, size);
@@ -1263,7 +1269,7 @@ omp_pause_resource (omp_pause_resource_t kind, int device_num)
     return gomp_pause_host ();
 
   struct gomp_device_descr *devicep = resolve_device (device_num, false);
-  if (devicep == NULL)
+  if (!GOMP_IS_OFFLOAD_DEVICE (devicep))
     return -1;
 
   /* Do nothing for target devices for now.  */
@@ -1307,7 +1313,8 @@ omp_get_interop_int (const omp_interop_t interop,
       return 0;
     }
   if (obj == NULL
-      || (devicep = resolve_device (obj->device_num, false)) == NULL)
+      || !GOMP_IS_OFFLOAD_DEVICE (devicep = resolve_device (obj->device_num,
+							   false)))
     {
       if (ret_code)
 	*ret_code = omp_irc_empty;  /* Assume omp_interop_none.  */
@@ -1331,7 +1338,8 @@ omp_get_interop_ptr (const omp_interop_t interop,
       return 0;
     }
   if (obj == NULL
-      || (devicep = resolve_device (obj->device_num, false)) == NULL)
+      || !GOMP_IS_OFFLOAD_DEVICE (devicep = resolve_device (obj->device_num,
+							   false)))
     {
       if (ret_code)
 	*ret_code = omp_irc_empty;  /* Assume omp_interop_none.  */
@@ -1355,7 +1363,8 @@ omp_get_interop_str (const omp_interop_t interop,
       return 0;
     }
   if (obj == NULL
-      || (devicep = resolve_device (obj->device_num, false)) == NULL)
+      || !GOMP_IS_OFFLOAD_DEVICE (devicep = resolve_device (obj->device_num,
+							   false)))
     {
       if (ret_code)
 	*ret_code = omp_irc_empty;  /* Assume omp_interop_none.  */
@@ -1386,7 +1395,8 @@ omp_get_interop_type_desc (const omp_interop_t interop,
   if (property_id > omp_ipr_fr_id || property_id < omp_ipr_first)
     return NULL;
   if (obj == NULL
-      || (devicep = resolve_device (obj->device_num, false)) == NULL)
+      || !GOMP_IS_OFFLOAD_DEVICE (devicep = resolve_device (obj->device_num,
+							   false)))
     return NULL;
   return gomp_device_get_interop_type_desc (devicep, obj, property_id);
 }
@@ -1442,7 +1452,7 @@ gomp_interop_internal (void *data)
       if (*obj == NULL /* omp_interop_none */)
 	continue;
       devicep = resolve_device ((*obj)->device_num, false);
-      if (devicep != NULL)
+      if (GOMP_IS_OFFLOAD_DEVICE (devicep))
 	gomp_device_interop (devicep, *obj, gomp_interop_flag_destroy);
       free (*obj);
       *obj = NULL;
@@ -1459,7 +1469,7 @@ gomp_interop_internal (void *data)
 	    = (args->target_targetsync[i] & GOMP_INTEROP_TARGETSYNC);
 	  const char *prefer_type
 	    = (args->prefer_type ? args->prefer_type[i] : NULL);
-	  if (devicep == NULL)
+	  if (!GOMP_IS_OFFLOAD_DEVICE (devicep))
 	    {
 	      *obj = NULL;
 	      continue;
@@ -1474,7 +1484,7 @@ gomp_interop_internal (void *data)
       if (obj == NULL)
 	continue;
       devicep = resolve_device (obj->device_num, false);
-      if (devicep != NULL)
+      if (GOMP_IS_OFFLOAD_DEVICE (devicep))
 	gomp_device_interop (devicep, obj, gomp_interop_flag_use);
     }
 }
@@ -1540,7 +1550,7 @@ omp_get_uid_from_device (int device_num)
     return str_omp_initial_device;
 
   struct gomp_device_descr *devicep = resolve_device (device_num, false);
-  if (devicep == NULL)
+  if (!GOMP_IS_OFFLOAD_DEVICE (devicep))
     return NULL;
   return gomp_get_uid_for_device (devicep, device_num);
 }
@@ -1552,6 +1562,8 @@ omp_get_device_from_uid (const char *uid)
     return omp_invalid_device;
   if (strcmp (uid, str_omp_initial_device) == 0)
     return omp_initial_device;
+  if (!GOMP_HAVE_OFFLOAD_DEVICES)
+    return omp_invalid_device;
   return gomp_device_from_uid (uid);
 }
 

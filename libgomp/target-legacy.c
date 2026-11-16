@@ -52,7 +52,7 @@ GOMP_target (int device, void (*fn) (void *), const void *unused,
   struct gomp_device_descr *devicep = resolve_device (device, true);
 
   void *fn_addr;
-  if (devicep == NULL
+  if (!GOMP_IS_OFFLOAD_DEVICE (devicep)
       || !(devicep->capabilities & GOMP_OFFLOAD_CAP_OPENMP_400)
       /* All shared memory devices should use the GOMP_target_ext function.  */
       || devicep->capabilities & GOMP_OFFLOAD_CAP_SHARED_MEM
@@ -68,7 +68,7 @@ GOMP_target_data (int device, const void *unused, size_t mapnum,
 {
   struct gomp_device_descr *devicep = resolve_device (device, true);
 
-  if (devicep == NULL
+  if (!GOMP_IS_OFFLOAD_DEVICE (devicep)
       || !(devicep->capabilities & GOMP_OFFLOAD_CAP_OPENMP_400)
       || (devicep->capabilities & GOMP_OFFLOAD_CAP_SHARED_MEM))
     return gomp_target_data_fallback (devicep);
@@ -87,7 +87,7 @@ GOMP_target_update (int device, const void *unused, size_t mapnum,
 {
   struct gomp_device_descr *devicep = resolve_device (device, true);
 
-  if (devicep == NULL
+  if (!GOMP_IS_OFFLOAD_DEVICE (devicep)
       || !(devicep->capabilities & GOMP_OFFLOAD_CAP_OPENMP_400)
       || devicep->capabilities & GOMP_OFFLOAD_CAP_SHARED_MEM)
     return;

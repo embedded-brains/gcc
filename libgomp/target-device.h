@@ -44,6 +44,11 @@ extern int num_devices_openmp attribute_hidden;
 extern struct gomp_device_descr *resolve_device (int, bool) attribute_hidden;
 extern struct gomp_offload_icv_list *gomp_get_offload_icv_item (int)
   attribute_hidden;
+extern void gomp_target_fallback (void (*) (void *), void **,
+				  struct gomp_device_descr *, void **)
+  attribute_hidden;
+extern void gomp_target_data_fallback (struct gomp_device_descr *)
+  attribute_hidden;
 
 /* Helpers of the host fallback and the shared memory devices.  */
 

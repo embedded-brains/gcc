@@ -141,7 +141,7 @@ gomp_get_offload_icv_item (int dev_num)
 
 /* Host fallback for GOMP_target{,_ext} routines.  */
 
-static void
+attribute_hidden void
 gomp_target_fallback (void (*fn) (void *), void **hostaddrs,
 		      struct gomp_device_descr *devicep, void **args)
 {
@@ -181,34 +181,6 @@ gomp_target_fallback (void (*fn) (void *), void **hostaddrs,
   fn (hostaddrs);
   gomp_free_thread (thr);
   *thr = old_thr;
-}
-
-/* Called when encountering a target directive.  If DEVICE
-   is GOMP_DEVICE_ICV, it means use device-var ICV.  If it is
-   GOMP_DEVICE_HOST_FALLBACK (or any value
-   larger than last available hw device), use host fallback.
-   FN is address of host code, UNUSED is part of the current ABI, but
-   we're not actually using it.  HOSTADDRS, SIZES and KINDS are arrays
-   with MAPNUM entries, with addresses of the host objects,
-   sizes of the host objects (resp. for pointer kind pointer bias
-   and assumed sizeof (void *) size) and kinds.  */
-
-void
-GOMP_target (int device, void (*fn) (void *), const void *unused,
-	     size_t mapnum, void **hostaddrs, size_t *sizes,
-	     unsigned char *kinds)
-{
-  struct gomp_device_descr *devicep = resolve_device (device, true);
-
-  void *fn_addr;
-  if (devicep == NULL
-      || !(devicep->capabilities & GOMP_OFFLOAD_CAP_OPENMP_400)
-      /* All shared memory devices should use the GOMP_target_ext function.  */
-      || devicep->capabilities & GOMP_OFFLOAD_CAP_SHARED_MEM
-      || !(fn_addr = gomp_get_target_fn_addr (devicep, fn)))
-    return gomp_target_fallback (fn, hostaddrs, devicep, NULL);
-
-  gomp_target_run (devicep, fn_addr, mapnum, hostaddrs, sizes, kinds);
 }
 
 static inline unsigned int
@@ -501,7 +473,7 @@ GOMP_target_ext (int device, void (*fn) (void *), size_t mapnum,
 
 /* Host fallback for GOMP_target_data{,_ext} routines.  */
 
-static void
+attribute_hidden void
 gomp_target_data_fallback (struct gomp_device_descr *devicep)
 {
   struct gomp_task_icv *icv = gomp_icv (false);
@@ -513,25 +485,6 @@ gomp_target_data_fallback (struct gomp_device_descr *devicep)
 
   if (icv->target_data)
     gomp_target_data_push_empty (icv);
-}
-
-void
-GOMP_target_data (int device, const void *unused, size_t mapnum,
-		  void **hostaddrs, size_t *sizes, unsigned char *kinds)
-{
-  struct gomp_device_descr *devicep = resolve_device (device, true);
-
-  if (devicep == NULL
-      || !(devicep->capabilities & GOMP_OFFLOAD_CAP_OPENMP_400)
-      || (devicep->capabilities & GOMP_OFFLOAD_CAP_SHARED_MEM))
-    return gomp_target_data_fallback (devicep);
-
-  struct target_mem_desc *tgt
-    = gomp_map_vars (devicep, mapnum, hostaddrs, NULL, sizes, kinds, false,
-		     NULL, GOMP_MAP_VARS_DATA);
-  struct gomp_task_icv *icv = gomp_icv (true);
-  tgt->prev = icv->target_data;
-  icv->target_data = tgt;
 }
 
 void
@@ -552,20 +505,6 @@ GOMP_target_end_data (void)
   struct gomp_task_icv *icv = gomp_icv (false);
   if (icv->target_data)
     gomp_target_data_pop (icv);
-}
-
-void
-GOMP_target_update (int device, const void *unused, size_t mapnum,
-		    void **hostaddrs, size_t *sizes, unsigned char *kinds)
-{
-  struct gomp_device_descr *devicep = resolve_device (device, true);
-
-  if (devicep == NULL
-      || !(devicep->capabilities & GOMP_OFFLOAD_CAP_OPENMP_400)
-      || devicep->capabilities & GOMP_OFFLOAD_CAP_SHARED_MEM)
-    return;
-
-  gomp_update (devicep, mapnum, hostaddrs, sizes, kinds, false);
 }
 
 void
@@ -712,20 +651,6 @@ gomp_target_task_fn (void *data)
 
   gomp_target_task_data (devicep, ttask);
   return false;
-}
-
-/* Implement OpenMP 'teams' construct, legacy entry point.  */
-
-void
-GOMP_teams (unsigned int num_teams, unsigned int thread_limit)
-{
-  if (thread_limit)
-    {
-      struct gomp_task_icv *icv = gomp_icv (true);
-      icv->thread_limit_var
-	= thread_limit > INT_MAX ? UINT_MAX : thread_limit;
-    }
-  (void) num_teams;
 }
 
 /* Implement OpenMP 'teams' construct.

@@ -33,6 +33,7 @@
 #ifndef LIBGOMP_OFFLOADED_ONLY
 #include "libgomp_f.h"
 #include "oacc-int.h"
+#include "target-device.h"
 #include <ctype.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -2387,6 +2388,12 @@ initialize_env (void)
   if (gomp_global_icv.default_device_var == INT_MIN
       && gomp_target_offload_var != GOMP_TARGET_OFFLOAD_MANDATORY)
     none->icvs.default_device_var = gomp_global_icv.default_device_var = 0;
+  else if (gomp_global_icv.default_device_var == INT_MIN
+	   && !GOMP_HAVE_OFFLOAD_DEVICES)
+    /* Without offload devices, gomp_target_init does not run and cannot
+       resolve the default device.  */
+    none->icvs.default_device_var = gomp_global_icv.default_device_var
+      = omp_invalid_device;
 
   /* Process GOMP_* variables and dependencies between parsed ICVs.  */
   parse_int_secure ("GOMP_DEBUG", &gomp_debug_var, true);

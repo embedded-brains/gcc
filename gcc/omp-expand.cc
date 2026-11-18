@@ -3565,6 +3565,48 @@ expand_omp_ordered_sink (gimple_stmt_iterator *gsi, struct omp_for_data *fd,
 	      t = fold_build3_loc (loc, COND_EXPR, boolean_type_node,
 				   t, t2, t1);
 	    }
+	  else if (TYPE_UNSIGNED (TREE_TYPE (fd->loops[i].v))
+		   && !POINTER_TYPE_P (TREE_TYPE (fd->loops[i].v)))
+	    {
+	      /* The sink iteration A may wrap around for an unsigned
+		 iteration variable.  The iteration variable lies between the
+		 bounds, so compare its distance to the bound with the
+		 offset instead.  */
+	      tree vtype = TREE_TYPE (fd->loops[i].v);
+	      tree n1 = fold_convert_loc (loc, vtype, fd->loops[i].n1);
+	      tree n2 = fold_convert_loc (loc, vtype, fd->loops[i].n2);
+	      tree uco = fold_convert_loc (loc, vtype, co);
+	      tree d;
+	      enum tree_code code;
+	      if (fd->loops[i].cond_code == LT_EXPR)
+		{
+		  if (OMP_CLAUSE_DOACROSS_SINK_NEGATIVE (deps))
+		    {
+		      d = fold_build2_loc (loc, MINUS_EXPR, vtype,
+					   fd->loops[i].v, n1);
+		      code = GE_EXPR;
+		    }
+		  else
+		    {
+		      d = fold_build2_loc (loc, MINUS_EXPR, vtype, n2,
+					   fd->loops[i].v);
+		      code = GT_EXPR;
+		    }
+		}
+	      else if (OMP_CLAUSE_DOACROSS_SINK_NEGATIVE (deps))
+		{
+		  d = fold_build2_loc (loc, MINUS_EXPR, vtype,
+				       fd->loops[i].v, n2);
+		  code = GT_EXPR;
+		}
+	      else
+		{
+		  d = fold_build2_loc (loc, MINUS_EXPR, vtype, n1,
+				       fd->loops[i].v);
+		  code = GE_EXPR;
+		}
+	      t = fold_build2_loc (loc, code, boolean_type_node, d, uco);
+	    }
 	  else if (fd->loops[i].cond_code == LT_EXPR)
 	    {
 	      if (OMP_CLAUSE_DOACROSS_SINK_NEGATIVE (deps))
@@ -3627,17 +3669,27 @@ expand_omp_ordered_sink (gimple_stmt_iterator *gsi, struct omp_for_data *fd,
 			       fd->loops[i].v, fd->loops[i].n1);
 	  t = fold_convert_loc (loc, fd->iter_type, t);
 	}
+      bool negative = OMP_CLAUSE_DOACROSS_SINK_NEGATIVE (deps);
       if (step)
 	/* We have divided off by step already earlier.  */;
       else if (TYPE_UNSIGNED (itype) && fd->loops[i].cond_code == GT_EXPR)
-	off = fold_build2_loc (loc, TRUNC_DIV_EXPR, itype, off,
-			       fold_build1_loc (loc, NEGATE_EXPR, itype,
-						s));
+	{
+	  /* The division by the negated step yields the magnitude of the
+	     logical offset.  The division by the negative step of a signed
+	     loop yields its negation.  */
+	  off = fold_build2_loc (loc, TRUNC_DIV_EXPR, itype, off,
+				 fold_build1_loc (loc, NEGATE_EXPR, itype,
+						  s));
+	  negative = !negative;
+	}
       else
 	off = fold_build2_loc (loc, TRUNC_DIV_EXPR, itype, off, s);
-      if (OMP_CLAUSE_DOACROSS_SINK_NEGATIVE (deps))
-	off = fold_build1_loc (loc, NEGATE_EXPR, itype, off);
+      /* Negate in the iteration type, so that the negation of an unsigned
+	 offset narrower than the iteration type is no large positive
+	 value.  */
       off = fold_convert_loc (loc, fd->iter_type, off);
+      if (negative)
+	off = fold_build1_loc (loc, NEGATE_EXPR, fd->iter_type, off);
       if (i <= fd->collapse - 1 && fd->collapse > 1)
 	{
 	  if (i)

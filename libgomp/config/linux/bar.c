@@ -118,7 +118,7 @@ gomp_team_barrier_wait_end (gomp_barrier_t *bar, gomp_barrier_state_t state)
 	  gomp_barrier_handle_tasks (state);
 	  gen = __atomic_load_n (&bar->generation, MEMMODEL_ACQUIRE);
 	}
-      generation |= gen & BAR_WAITING_FOR_TASK;
+      generation |= gen & (BAR_WAITING_FOR_TASK | BAR_CANCELLED);
     }
   while (!gomp_barrier_state_is_incremented (gen, state));
 }

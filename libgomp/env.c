@@ -1728,8 +1728,9 @@ print_device_specific_icvs (int icv_code)
 	  fputs ("'\n", stderr);
 	  break;
 	case GOMP_ICV_MAX_ACTIVE_LEVELS:
-	  fprintf (stderr, "  [%d] OMP_MAX_ACTIVE_LEVELS = '%u'\n",
-		   list->device_num, list->icvs.max_active_levels_var);
+	  if (gomp_get_icv_flag (list->flags, GOMP_ICV_MAX_ACTIVE_LEVELS))
+	    fprintf (stderr, "  [%d] OMP_MAX_ACTIVE_LEVELS = '%u'\n",
+		     list->device_num, list->icvs.max_active_levels_var);
 	  break;
 	case GOMP_ICV_BIND:
 	  if (!(gomp_get_icv_flag (list->flags, GOMP_ICV_BIND)))

@@ -134,7 +134,7 @@ static void
 print_env_var_error (const char *env, const char *val)
 {
   gomp_error ("Invalid value for environment variable %.*s: %s",
-	      (int) (val - env - 1), env, val);
+	      (int) strcspn (env, "="), env, val);
 }
 
 /* Parse the OMP_SCHEDULE environment variable.  */
@@ -223,7 +223,7 @@ parse_schedule (const char *env, const char *val, void *const params[])
   if (*end != '\0')
     goto invalid;
 
-  if ((int)value != value)
+  if (value > INT_MAX)
     goto invalid;
 
   if (value == 0 && (*schedule & ~GFS_MONOTONIC) != GFS_STATIC)
@@ -236,11 +236,9 @@ parse_schedule (const char *env, const char *val, void *const params[])
   return false;
 
  invalid:
-  char name[val - env];
-  memcpy (name, env, val - env - 1);
-  name[val - env - 1] = '\0';
   gomp_error ("Invalid value for chunk size in "
-	      "environment variable %s: %s", name, val);
+	      "environment variable %.*s: %s", (int) strcspn (env, "="), env,
+	      val);
   return false;
 }
 
@@ -387,11 +385,9 @@ parse_unsigned_long_list (const char *env, const char *val,
 		  if (n == NULL)
 		    {
 		      free (values);
-		      char name[val - env];
-		      memcpy (name, env, val - env - 1);
-		      name[val - env - 1] = '\0';
 		      gomp_error ("Out of memory while trying to parse"
-				  " environment variable %s", name);
+				  " environment variable %.*s",
+				  (int) strcspn (env, "="), env);
 		      return false;
 		    }
 		  values = n;
@@ -545,11 +541,9 @@ parse_bind_var (const char *env, const char *val, void *const params[])
 		  if (n == NULL)
 		    {
 		      free (values);
-		      char name[val - env];
-		      memcpy (name, env, val - env - 1);
-		      name[val - env - 1] = '\0';
 		      gomp_error ("Out of memory while trying to parse"
-				  " environment variable %s", name);
+				  " environment variable %.*s",
+				  (int) strcspn (env, "="), env);
 		      return false;
 		    }
 		  values = n;
